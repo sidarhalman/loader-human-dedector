@@ -98,9 +98,7 @@ export default function CameraPage() {
           const res = await fetch(`${BACKEND_URL}/detect`, { method: "POST", body: form });
           const data: DetectResponse = await res.json();
 
-          if (data.person_detected && !prevDetectedRef.current) {
-            beep();
-          }
+          if (data.person_detected && !prevDetectedRef.current) beep();
           prevDetectedRef.current = data.person_detected;
           setPersonDetected(data.person_detected);
 
@@ -151,27 +149,31 @@ export default function CameraPage() {
     return () => stop();
   }, [stop]);
 
+  const ledStyle: React.CSSProperties = active
+    ? personDetected
+      ? {
+          background: "#ff2222",
+          boxShadow: "0 0 8px 2px #ff2222, 0 0 24px 6px #ff000066",
+        }
+      : {
+          background: "#22ff44",
+          boxShadow: "0 0 8px 2px #22ff44, 0 0 24px 6px #00ff4466",
+        }
+    : {
+        background: "#444",
+        boxShadow: "none",
+      };
+
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center gap-6 p-4">
+      <span
+        className="rounded-full"
+        style={{ width: 40, height: 40, display: "inline-block", ...ledStyle }}
+      />
+
       <h1 className="text-white text-2xl font-bold">Kamera</h1>
 
       <div className="relative w-full max-w-md">
-        {/* Uyarı göstergesi */}
-        {active && (
-          <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-            <span
-              className={`w-4 h-4 rounded-full ${
-                personDetected ? "bg-red-500 animate-pulse" : "bg-green-500"
-              }`}
-            />
-            {personDetected && (
-              <span className="text-white text-sm font-bold bg-red-600/80 px-2 py-0.5 rounded">
-                İNSAN ALGILANDI
-              </span>
-            )}
-          </div>
-        )}
-
         <video
           ref={videoRef}
           muted
@@ -190,9 +192,7 @@ export default function CameraPage() {
       <button
         onClick={active ? stop : start}
         className={`px-8 py-3 rounded-lg text-white font-semibold text-lg transition-colors ${
-          active
-            ? "bg-red-600 hover:bg-red-700"
-            : "bg-green-600 hover:bg-green-700"
+          active ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"
         }`}
       >
         {active ? "Pasif" : "Aktif"}
