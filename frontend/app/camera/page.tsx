@@ -13,6 +13,24 @@ type DetectResponse = {
   image_height: number;
 };
 
+function beep() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "square";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.6);
+  } catch {
+    // AudioContext desteklenmiyor
+  }
+}
+
 function drawBoxes(
   overlay: HTMLCanvasElement,
   video: HTMLVideoElement,
@@ -56,9 +74,10 @@ export default function CameraPage() {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const prevDetectedRef = useRef(false);
 
   const [active, setActive] = useState(false);
-  const [status, setStatus] = useState<string>("Pasif");
+  const [personDetected, setPersonDetected] = useState(false);
 
   const sendFrame = useCallback(() => {
     const video = videoRef.current;
@@ -78,6 +97,13 @@ export default function CameraPage() {
         try {
           const res = await fetch(`${BACKEND_URL}/detect`, { method: "POST", body: form });
           const data: DetectResponse = await res.json();
+
+          if (data.person_detected && !prevDetectedRef.current) {
+            beep();
+          }
+          prevDetectedRef.current = data.person_detected;
+          setPersonDetected(data.person_detected);
+
           if (videoRef.current && overlayRef.current) {
             drawBoxes(overlayRef.current, videoRef.current, data.boxes, data.image_width, data.image_height);
           }
@@ -102,9 +128,8 @@ export default function CameraPage() {
       }
       intervalRef.current = setInterval(sendFrame, 700);
       setActive(true);
-      setStatus("Aktif — frame gönderiliyor");
     } catch {
-      setStatus("Kamera erişim hatası");
+      // kamera erişim hatası
     }
   }, [sendFrame]);
 
@@ -117,8 +142,9 @@ export default function CameraPage() {
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     overlayRef.current?.getContext("2d")?.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
+    prevDetectedRef.current = false;
+    setPersonDetected(false);
     setActive(false);
-    setStatus("Pasif");
   }, []);
 
   useEffect(() => {
@@ -130,6 +156,22 @@ export default function CameraPage() {
       <h1 className="text-white text-2xl font-bold">Kamera</h1>
 
       <div className="relative w-full max-w-md">
+        {/* Uyarı göstergesi */}
+        {active && (
+          <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+            <span
+              className={`w-4 h-4 rounded-full ${
+                personDetected ? "bg-red-500 animate-pulse" : "bg-green-500"
+              }`}
+            />
+            {personDetected && (
+              <span className="text-white text-sm font-bold bg-red-600/80 px-2 py-0.5 rounded">
+                İNSAN ALGILANDI
+              </span>
+            )}
+          </div>
+        )}
+
         <video
           ref={videoRef}
           muted
@@ -155,8 +197,6 @@ export default function CameraPage() {
       >
         {active ? "Pasif" : "Aktif"}
       </button>
-
-      <p className="text-gray-400 text-sm">{status}</p>
     </div>
   );
 }
