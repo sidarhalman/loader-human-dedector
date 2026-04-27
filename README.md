@@ -1,17 +1,17 @@
 # Human Detector
 
-Telefon kamerasından gerçek zamanlı insan tespiti. Backend YOLO ile kişi algılar, uyarı ekranı kırmızı/yeşil gösterir.
+Real-time human detection via phone camera. The backend detects people using YOLO, and the warning screen displays red/green accordingly.
 
-## Mimari
+## Architecture
 
 ```
-/camera  →  POST /detect  →  FastAPI + YOLOv8n
+/camera  →  POST /detect  →  FastAPI + YOLOv8n (ONNX)
 /warning  ←  GET /status (500ms polling)
 ```
 
 ---
 
-## Local Çalıştırma
+## Local Development
 
 ### Backend
 
@@ -24,7 +24,7 @@ uvicorn main:app --reload
 # → http://localhost:8000
 ```
 
-İlk çalıştırmada `yolov8n.pt` modeli (~6MB) otomatik indirilir.
+The `yolov8n.onnx` model file must be present in the `backend/` directory.
 
 ### Frontend
 
@@ -36,9 +36,9 @@ npm run dev
 # → http://localhost:3000
 ```
 
-Sayfalar:
-- `http://localhost:3000/camera` — Kamera + frame gönderme
-- `http://localhost:3000/warning` — Uyarı ekranı
+Pages:
+- `http://localhost:3000/camera` — Camera + frame streaming
+- `http://localhost:3000/warning` — Alert screen
 
 ---
 
@@ -46,19 +46,19 @@ Sayfalar:
 
 ### Backend → Render
 
-1. [render.com](https://render.com) → New Web Service → repo'yu bağla
+1. [render.com](https://render.com) → New Web Service → connect repo
 2. **Root Directory**: `backend`
 3. **Build Command**: `pip install -r requirements.txt`
 4. **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-5. Deploy sonrası URL'yi not al (örn. `https://your-api.onrender.com`)
+5. Note the deployed URL (e.g. `https://your-api.onrender.com`)
 
-> Render free tier cold start ~30s sürebilir.
+> Render free tier may have a cold start delay of ~30s.
 
 ### Frontend → Vercel
 
-1. [vercel.com](https://vercel.com) → New Project → repo'yu bağla
+1. [vercel.com](https://vercel.com) → New Project → connect repo
 2. **Root Directory**: `frontend`
-3. **Environment Variables** ekle:
+3. Add **Environment Variable**:
    ```
    NEXT_PUBLIC_BACKEND_URL=https://your-api.onrender.com
    ```
@@ -66,16 +66,16 @@ Sayfalar:
 
 ---
 
-## Environment Değişkenleri
+## Environment Variables
 
-| Değişken | Yer | Açıklama |
+| Variable | Location | Description |
 |---|---|---|
 | `NEXT_PUBLIC_BACKEND_URL` | Vercel / `.env.local` | FastAPI backend URL |
 
 ---
 
-## Notlar
+## Notes
 
-- Kamera erişimi **HTTPS** gerektirir (local `localhost` muaf, production Vercel URL'si otomatik HTTPS)
-- YOLO sadece backend'de çalışır, Vercel'de çalıştırılmaz
-- Production'da `main.py` içindeki `allow_origins=["*"]` Vercel URL ile kısıtlanmalı
+- Camera access requires **HTTPS** (local `localhost` is exempt; Vercel production URL is automatically HTTPS)
+- YOLO runs on the backend only — never on Vercel
+- In production, restrict `allow_origins` in `main.py` to your Vercel URL

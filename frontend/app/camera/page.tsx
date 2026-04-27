@@ -27,7 +27,6 @@ function beep() {
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + 0.6);
   } catch {
-    // AudioContext desteklenmiyor
   }
 }
 
@@ -46,8 +45,23 @@ function drawBoxes(
   if (!ctx) return;
   ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-  const scaleX = rect.width / imgW;
-  const scaleY = rect.height / imgH;
+  const videoAR = imgW / imgH;
+  const elemAR = rect.width / rect.height;
+  let displayW: number, displayH: number, offsetX: number, offsetY: number;
+  if (videoAR > elemAR) {
+    displayW = rect.width;
+    displayH = rect.width / videoAR;
+    offsetX = 0;
+    offsetY = (rect.height - displayH) / 2;
+  } else {
+    displayH = rect.height;
+    displayW = rect.height * videoAR;
+    offsetX = (rect.width - displayW) / 2;
+    offsetY = 0;
+  }
+
+  const scaleX = displayW / imgW;
+  const scaleY = displayH / imgH;
 
   ctx.strokeStyle = "#00ff00";
   ctx.lineWidth = 2;
@@ -55,8 +69,8 @@ function drawBoxes(
   ctx.font = "bold 14px sans-serif";
 
   for (const box of boxes) {
-    const x = box.x1 * scaleX;
-    const y = box.y1 * scaleY;
+    const x = box.x1 * scaleX + offsetX;
+    const y = box.y1 * scaleY + offsetY;
     const w = (box.x2 - box.x1) * scaleX;
     const h = (box.y2 - box.y1) * scaleY;
 
@@ -72,46 +86,60 @@ export default function CameraPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const prevDetectedRef = useRef(false);
+  const runningRef = useRef(false);
 
   const [active, setActive] = useState(false);
   const [personDetected, setPersonDetected] = useState(false);
 
-  const sendFrame = useCallback(() => {
-    const video = videoRef.current;
-    const capture = captureRef.current;
-    const overlay = overlayRef.current;
-    if (!video || !capture || !overlay) return;
+  const captureBlob = (video: HTMLVideoElement, capture: HTMLCanvasElement): Promise<Blob | null> =>
+    new Promise((resolve) => {
+      capture.width = video.videoWidth;
+      capture.height = video.videoHeight;
+      capture.getContext("2d")?.drawImage(video, 0, 0);
+      capture.toBlob(resolve, "image/jpeg", 0.8);
+    });
 
-    capture.width = video.videoWidth;
-    capture.height = video.videoHeight;
-    capture.getContext("2d")?.drawImage(video, 0, 0);
+  const loop = useCallback(async () => {
+    const TARGET_FPS = 5; 
+    const frameDelayMs = 1000 / TARGET_FPS;
 
-    capture.toBlob(
-      async (blob) => {
-        if (!blob) return;
-        const form = new FormData();
-        form.append("file", blob, "frame.jpg");
-        try {
-          const res = await fetch(`${BACKEND_URL}/detect`, { method: "POST", body: form });
-          const data: DetectResponse = await res.json();
+    while (runningRef.current) {
+      const startTime = Date.now();
 
-          if (data.person_detected && !prevDetectedRef.current) beep();
-          prevDetectedRef.current = data.person_detected;
-          setPersonDetected(data.person_detected);
+      const video = videoRef.current;
+      const capture = captureRef.current;
+      const overlay = overlayRef.current;
+      if (!video || !capture || !overlay) break;
 
-          if (videoRef.current && overlayRef.current) {
-            drawBoxes(overlayRef.current, videoRef.current, data.boxes, data.image_width, data.image_height);
-          }
-        } catch {
-          // backend ulaşılamaz
+      const blob = await captureBlob(video, capture);
+      if (!blob || !runningRef.current) break;
+
+      const form = new FormData();
+      form.append("file", blob, "frame.jpg");
+      try {
+        const res = await fetch(`${BACKEND_URL}/detect`, { method: "POST", body: form });
+        const data: DetectResponse = await res.json();
+
+        if (!runningRef.current) break;
+        if (data.person_detected && !prevDetectedRef.current) beep();
+        prevDetectedRef.current = data.person_detected;
+        setPersonDetected(data.person_detected);
+
+        if (videoRef.current && overlayRef.current) {
+          drawBoxes(overlayRef.current, videoRef.current, data.boxes, data.image_width, data.image_height);
         }
-      },
-      "image/jpeg",
-      0.8
-    );
+      } catch {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      const elapsed = Date.now() - startTime;
+      const delay = Math.max(0, frameDelayMs - elapsed);
+      if (delay > 0) {
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
   }, []);
 
   const start = useCallback(async () => {
@@ -124,18 +152,15 @@ export default function CameraPage() {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-      intervalRef.current = setInterval(sendFrame, 700);
+      runningRef.current = true;
       setActive(true);
+      loop();
     } catch {
-      // kamera erişim hatası
     }
-  }, [sendFrame]);
+  }, [loop]);
 
   const stop = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    runningRef.current = false;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -165,7 +190,7 @@ export default function CameraPage() {
       };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center gap-6 p-4">
+    <div className="min-h-screen bg-gray-900 flex flex-col items-center p-2 gap-2">
       <span
         className="rounded-full"
         style={{ width: 40, height: 40, display: "inline-block", ...ledStyle }}
@@ -173,17 +198,16 @@ export default function CameraPage() {
 
       <h1 className="text-white text-2xl font-bold">Kamera</h1>
 
-      <div className="relative w-full max-w-md">
+      <div className="relative w-full" style={{ height: "70vh" }}>
         <video
           ref={videoRef}
           muted
           playsInline
-          className="w-full rounded-lg bg-black"
-          style={{ aspectRatio: "4/3", display: "block" }}
+          className="w-full h-full rounded-lg bg-black object-contain"
         />
         <canvas
           ref={overlayRef}
-          className="absolute top-0 left-0 w-full h-full rounded-lg pointer-events-none"
+          className="absolute inset-0 w-full h-full rounded-lg pointer-events-none"
         />
       </div>
 
