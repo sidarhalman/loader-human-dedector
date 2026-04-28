@@ -102,7 +102,7 @@ export default function CameraPage() {
     });
 
   const loop = useCallback(async () => {
-    const TARGET_FPS = 5; 
+    const TARGET_FPS = 1;
     const frameDelayMs = 1000 / TARGET_FPS;
 
     while (runningRef.current) {
